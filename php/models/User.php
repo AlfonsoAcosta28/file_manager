@@ -87,6 +87,8 @@ class User {
                     throw new Exception("Error en la preparación de la consulta: " . $this->conn->error);
                 }
 
+                
+
                 $stmt->bind_param("s", $email);
                 $stmt->execute();
                 $result = $stmt->get_result();
