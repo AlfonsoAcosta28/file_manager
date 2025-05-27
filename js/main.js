@@ -151,7 +151,7 @@ function logout() {
     }).done(function(response) {
         console.log("Respuesta de logout:", response);
         if (response == "1") {
-            // alert("Sesión cerrada exitosamente.");
+            alert("Sesión cerrada exitosamente.");
             window.location.reload();
         } else {
             alert("Error al cerrar sesión. Respuesta inesperada del servidor.");
