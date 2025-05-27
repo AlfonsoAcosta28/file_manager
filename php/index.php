@@ -170,7 +170,7 @@ session_start();
             <div class="profile-info" id="profileInfo">
                 <!-- La información del perfil se cargará dinámicamente aquí -->
             </div>
-            <button class="btn btn-primary" onclick="showEditProfile()">Editar Perfil</button>
+            <!-- <button class="btn btn-primary" onclick="showEditProfile()">Editar Perfil</button> -->
         </div>
     </div>
 

@@ -149,11 +149,18 @@ function logout() {
             acc: "logout"
         }
     }).done(function(response) {
-        if (response === "1") {
+        console.log("Respuesta de logout:", response);
+        if (response == "1") {
+            alert("Sesión cerrada exitosamente.");
             window.location.reload();
+        } else {
+            alert("Error al cerrar sesión. Respuesta inesperada del servidor.");
+            console.error("Respuesta de logout inesperada:", response);
         }
-    }).fail(function() {
-        console.error("Error al cerrar sesión");
+    }).fail(function(jqXHR, textStatus, errorThrown) {
+        console.error("Error AJAX al cerrar sesión:", textStatus, errorThrown);
+        console.error("Respuesta del servidor (fail):", jqXHR.responseText);
+        alert("Error al cerrar sesión.");
     });
 }
 
@@ -516,8 +523,12 @@ function loadProfileInfo() {
                         <label><strong>Apellido Materno:</strong></label>
                         <p>${response.user.apellido_materno}</p>
                     </div>
+                    <div class="profile-actions">
+                         <button type="button" class="btn btn-primary" id="editProfileButton" onclick="showEditProfile()">Editar Datos</button>
+                    </div>
                 </div>
             `);
+            $('#editProfileButton').show();
         }
     }).fail(function() {
         console.error("Error al cargar información del perfil");
@@ -525,6 +536,8 @@ function loadProfileInfo() {
 }
 
 function showEditProfile() {
+    $('#editProfileButton').hide();
+
     $.ajax({
         type: "POST",
         url: BASE_URL + "AuthController.php",
@@ -583,13 +596,16 @@ function updateProfile(event) {
             apellido_materno: apellidoMaterno
         }
     }).done(function(response) {
-        if (response === "1") {
-            alert("Perfil actualizado exitosamente");
+        console.log("Respuesta de updateProfile:", response);
+        if (response == "1") {
+            // alert("Perfil actualizado exitosamente");
             loadProfileInfo();
         } else {
             alert("Error al actualizar perfil");
         }
-    }).fail(function() {
+    }).fail(function(jqXHR, textStatus, errorThrown) {
+        console.error("Error AJAX al actualizar perfil:", textStatus, errorThrown);
+        console.error("Respuesta del servidor (fail):", jqXHR.responseText);
         alert("Error al actualizar perfil");
     });
     return false;
