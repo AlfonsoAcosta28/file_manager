@@ -73,14 +73,32 @@ class Database {
 
     public function openFTP() {
         try {
-            $this->ftp_conn = ftp_connect($this->ftp_host, $this->ftp_port);
+            // Intentar conexión con timeout de 30 segundos
+            $this->ftp_conn = ftp_connect($this->ftp_host, $this->ftp_port, 30);
             if (!$this->ftp_conn) {
+                error_log("Error al conectar al FTP: " . error_get_last()['message']);
                 throw new Exception("No se pudo conectar al servidor FTP");
             }
 
+            // Intentar login
             if (!ftp_login($this->ftp_conn, $this->ftp_username, $this->ftp_password)) {
+                error_log("Error al hacer login en FTP: " . error_get_last()['message']);
                 throw new Exception("Error al iniciar sesión en FTP");
             }
+
+            // Habilitar modo pasivo
+            if (!ftp_pasv($this->ftp_conn, true)) {
+                error_log("Error al configurar modo pasivo: " . error_get_last()['message']);
+                throw new Exception("Error al configurar el modo pasivo FTP");
+            }
+
+            // Verificar el directorio actual
+            $current_dir = ftp_pwd($this->ftp_conn);
+            error_log("Directorio actual FTP: " . $current_dir);
+
+            // Listar el directorio actual
+            $list = ftp_nlist($this->ftp_conn, ".");
+            error_log("Contenido del directorio actual: " . print_r($list, true));
 
             return $this->ftp_conn;
         } catch (Exception $e) {

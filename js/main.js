@@ -256,29 +256,42 @@ async function handleFileUpload(file) {
     formData.append('categoria', categoria);
 
     try {
+        // Esperar respuesta JSON
         const response = await $.ajax({
             url: BASE_URL + "FileController.php",
             method: 'POST',
             data: formData,
             processData: false,
-            contentType: false
+            contentType: false,
+            dataType: "json" // Especificar que esperamos JSON
         });
 
-        if (response === "1") {
-            alert('Archivo subido exitosamente');
+        // Procesar la respuesta JSON o el mensaje de error
+        if (typeof response === 'string') {
+            // Si la respuesta es un string, asumimos que es el mensaje de error del modelo.
+            alert('Error al subir el archivo: ' + response);
+            $('#fileInput').val('');
+            console.error('Error del modelo al subir archivo:', response);
+        } else if (response.success) {
+            alert(response.message || 'Archivo subido exitosamente');
             hideModal('uploadModal');
             $('#fileInput').val('');
             const searchQuery = $('#searchInput').val();
             if (searchQuery.length >= 4) {
                 searchFiles(searchQuery);
+            } else {
+                showAllFiles(); // Mostrar todos los archivos después de una subida exitosa si no hay búsqueda activa
             }
         } else {
-            alert('Error al subir el archivo');
+            // Mostrar el mensaje de error del backend
+            alert(response.message || 'Error al subir el archivo');
             $('#fileInput').val('');
+            console.error('Error al subir archivo:', response.message);
         }
     } catch (error) {
-        console.error('Error:', error);
-        alert('Error al subir el archivo');
+        console.error('Error AJAX al subir archivo:', error);
+        // Manejar errores de red o parseo de JSON
+        alert('Error al subir el archivo. Por favor, intente de nuevo.');
         $('#fileInput').val('');
     }
 }

@@ -7,7 +7,7 @@ class File {
     private $table = 'files';
     private $database;
     private $ftp_conn;
-    private $ftp_upload_dir = '/files/';
+    private $ftp_upload_dir = 'files/';
 
     public function __construct() {
         $this->database = new Database();
@@ -23,44 +23,71 @@ class File {
     }
 
     private function getFTPPath($filename) {
-        return $this->ftp_upload_dir . date('Y/m/d/') . $filename;
+        // Generar un nombre único para el archivo
+        $extension = pathinfo($filename, PATHINFO_EXTENSION);
+        $unique_name = uniqid() . '_' . time() . '.' . $extension;
+        return $this->ftp_upload_dir . $unique_name;
     }
 
     public function upload($file, $user_email) {
+        $debug_info = [];
         try {
+            $debug_info['step'] = 'inicio';
+            $debug_info['user_email'] = $user_email;
+            $debug_info['file_info'] = $file;
+
             $this->conn = $this->database->open($user_email);
+            $debug_info['db_connection'] = $this->conn ? 'success' : 'failed';
+
             $this->ftp_conn = $this->database->openFTP();
+            $debug_info['ftp_connection'] = $this->ftp_conn ? 'success' : 'failed';
 
             if (!$this->ftp_conn) {
                 throw new Exception("No se pudo conectar al servidor FTP");
             }
 
-            // Crear directorio en FTP si no existe
-            $year = date('Y');
-            $month = date('m');
-            $day = date('d');
-            
-            $paths = [
-                $this->ftp_upload_dir,
-                $this->ftp_upload_dir . $year,
-                $this->ftp_upload_dir . $year . '/' . $month,
-                $this->ftp_upload_dir . $year . '/' . $month . '/' . $day
-            ];
-
-            foreach ($paths as $path) {
-                if (!@ftp_nlist($this->ftp_conn, $path)) {
-                    ftp_mkdir($this->ftp_conn, $path);
-                }
+            if (!$this->conn) {
+                throw new Exception("No se pudo conectar a la base de datos");
             }
+
+            // Verificar permisos y directorio base
+            $debug_info['step'] = 'verificando_directorio';
+            
+            // Obtener el directorio actual
+            $current_dir = ftp_pwd($this->ftp_conn);
+            $debug_info['current_directory'] = $current_dir;
+            
+            // Listar el directorio actual para verificar permisos
+            $current_list = @ftp_nlist($this->ftp_conn, '.');
+            $debug_info['can_list_current'] = $current_list !== false;
+            $debug_info['current_directory_contents'] = $current_list;
 
             // Subir archivo al FTP
+            $debug_info['step'] = 'subiendo_archivo';
             $ftp_path = $this->getFTPPath($file['name']);
-            if (!ftp_put($this->ftp_conn, $ftp_path, $file['tmp_name'], FTP_BINARY)) {
-                throw new Exception("Error al subir el archivo al FTP");
+            $debug_info['target_path'] = $ftp_path;
+            $debug_info['temp_file'] = $file['tmp_name'];
+            
+            if (!file_exists($file['tmp_name'])) {
+                throw new Exception("El archivo temporal no existe: " . $file['tmp_name']);
             }
 
+            if (!ftp_put($this->ftp_conn, $ftp_path, $file['tmp_name'], FTP_BINARY)) {
+                $error = error_get_last();
+                throw new Exception("Error al subir el archivo al FTP: " . ($error ? $error['message'] : 'Error desconocido'));
+            }
+            $debug_info['ftp_upload'] = 'success';
+
+            // Verificar que el archivo existe en el FTP
+            if (!@ftp_nlist($this->ftp_conn, $ftp_path)) {
+                throw new Exception("El archivo no se encuentra en el FTP después de la subida");
+            }
+            $debug_info['file_verification'] = 'success';
+
             // Guardar información en la base de datos
+            $debug_info['step'] = 'insertando_en_db';
             if ($this->conn instanceof PDO) {
+                $debug_info['db_type'] = 'postgresql';
                 // PostgreSQL
                 $query = "INSERT INTO " . $this->table . " 
                         (nombre, tipo, tamaño, ruta, user_id) 
@@ -73,8 +100,13 @@ class File {
                 $stmt->bindParam(':ruta', $ftp_path);
                 $stmt->bindParam(':user_id', $_SESSION['user_id']);
                 
-                return $stmt->execute();
+                if (!$stmt->execute()) {
+                    throw new Exception("Error al insertar en la base de datos PostgreSQL: " . implode(", ", $stmt->errorInfo()));
+                }
+                $debug_info['db_insert'] = 'success';
+                return ['success' => true, 'debug' => $debug_info];
             } else {
+                $debug_info['db_type'] = 'mysql';
                 // MySQL
                 $query = "INSERT INTO " . $this->table . " 
                         (nombre, tipo, tamaño, ruta, user_id) 
@@ -82,7 +114,7 @@ class File {
                 
                 $stmt = $this->conn->prepare($query);
                 if (!$stmt) {
-                    throw new Exception("Error en la preparación de la consulta: " . $this->conn->error);
+                    throw new Exception("Error en la preparación de la consulta MySQL: " . $this->conn->error);
                 }
 
                 $stmt->bind_param("ssisi", 
@@ -93,13 +125,22 @@ class File {
                     $_SESSION['user_id']
                 );
 
-                $result = $stmt->execute();
+                if (!$stmt->execute()) {
+                    throw new Exception("Error al insertar en la base de datos MySQL: " . $stmt->error);
+                }
+                
+                $debug_info['db_insert'] = 'success';
                 $stmt->close();
-                return $result;
+                return ['success' => true, 'debug' => $debug_info];
             }
         } catch (Exception $e) {
-            error_log("Error en File::upload: " . $e->getMessage());
-            return false;
+            $debug_info['error'] = $e->getMessage();
+            // Si hubo error y el archivo se subió al FTP, intentar eliminarlo
+            if (isset($ftp_path) && $this->ftp_conn) {
+                @ftp_delete($this->ftp_conn, $ftp_path);
+                $debug_info['cleanup'] = 'file_deleted';
+            }
+            return ['success' => false, 'message' => $e->getMessage(), 'debug' => $debug_info];
         }
     }
 

@@ -20,9 +20,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'upload':
                 if (isset($_FILES['file'])) {
                     $result = $file->upload($_FILES['file'], $_SESSION['user_email']);
-                    echo $result ? "1" : "0";
+                    echo json_encode($result);
                 } else {
-                    echo "0";
+                    echo json_encode([
+                        'success' => false, 
+                        'message' => 'No se proporcionó ningún archivo para subir',
+                        'debug' => ['step' => 'error', 'error' => 'No file provided']
+                    ]);
                 }
                 break;
 
