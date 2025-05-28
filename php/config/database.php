@@ -1,19 +1,19 @@
 <?php
 
 class Database {
-    private $mysql_host = "192.168.0.13";
+    private $mysql_host = "192.168.0.100";
     private $mysql_db_name = "file_manager_mysql";
     private $mysql_username = "root";
     private $mysql_password = "root";
     private $mysql_port = 3307;
 
-    private $postgres_host = "192.168.0.13";
+    private $postgres_host = "192.168.0.100";
     private $postgres_db_name = "file_manager_postgres";
     private $postgres_username = "postgres";
     private $postgres_password = "postgres";
     private $postgres_port = 3308;
 
-    private $ftp_host = "192.168.0.13";
+    private $ftp_host = "192.168.0.100";
     private $ftp_username = "ftpuser";
     private $ftp_password = "1234";
     private $ftp_port = 21;

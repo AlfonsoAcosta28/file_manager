@@ -185,6 +185,13 @@ function checkSession() {
 
 async function searchFiles(query) {
     try {
+        const debugInfo = {
+            action: 'search',
+            query: query,
+            category: currentCategory
+        };
+        console.log('Debug Info:', JSON.stringify(debugInfo, null, 2));
+
         const response = await $.ajax({
             type: "POST",
             url: BASE_URL + "FileController.php",
@@ -196,9 +203,17 @@ async function searchFiles(query) {
             },
             dataType: "json"
         });
+
+        console.log('Server Response:', JSON.stringify(response, null, 2));
+        if (response.success) {
         displayResults(response.files);
+        } else {
+            console.error('Search Error:', JSON.stringify(response, null, 2));
+            displayResults([]);
+        }
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error:', JSON.stringify(error, null, 2));
+        displayResults([]);
     }
 }
 
@@ -226,9 +241,16 @@ function toggleCategory(btn, category) {
 async function handleFileUpload(file) {
     if (!file) return;
 
+    console.log('Archivo a subir:', {
+        name: file.name,
+        type: file.type,
+        size: file.size
+    });
+
     const fileType = file.type;
     let categoria = 'documentos';
 
+    // Determinar la categoría basada en el tipo MIME
     if (fileType.startsWith('image/')) {
         categoria = 'imagenes';
     } else if (fileType.startsWith('video/')) {
@@ -237,11 +259,21 @@ async function handleFileUpload(file) {
         categoria = 'musica';
     } else if (fileType === 'application/pdf' || 
                fileType === 'application/msword' || 
+               fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
                fileType === 'application/vnd.ms-excel' || 
+               fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
                fileType === 'text/plain') {
         categoria = 'documentos';
     } else {
+        console.error('Tipo de archivo no reconocido:', fileType);
         alert('Error: El tipo de archivo no es compatible con ninguna categoría.');
+        return;
+    }
+
+    // Validar el tamaño máximo del archivo (500MB)
+    const maxSize = 500 * 1024 * 1024; // 500MB en bytes
+    if (file.size > maxSize) {
+        alert('Error: El archivo es demasiado grande. El tamaño máximo permitido es 500MB.');
         return;
     }
 
@@ -256,19 +288,24 @@ async function handleFileUpload(file) {
     formData.append('categoria', categoria);
 
     try {
-        // Esperar respuesta JSON
+        console.log('Enviando archivo:', {
+            categoria: categoria,
+            tipo: file.type,
+            tamaño: file.size
+        });
+
         const response = await $.ajax({
             url: BASE_URL + "FileController.php",
             method: 'POST',
             data: formData,
             processData: false,
             contentType: false,
-            dataType: "json" // Especificar que esperamos JSON
+            dataType: "json"
         });
 
-        // Procesar la respuesta JSON o el mensaje de error
+        console.log('Respuesta del servidor:', response);
+
         if (typeof response === 'string') {
-            // Si la respuesta es un string, asumimos que es el mensaje de error del modelo.
             alert('Error al subir el archivo: ' + response);
             $('#fileInput').val('');
             console.error('Error del modelo al subir archivo:', response);
@@ -280,17 +317,18 @@ async function handleFileUpload(file) {
             if (searchQuery.length >= 4) {
                 searchFiles(searchQuery);
             } else {
-                showAllFiles(); // Mostrar todos los archivos después de una subida exitosa si no hay búsqueda activa
+                showAllFiles();
             }
         } else {
-            // Mostrar el mensaje de error del backend
             alert(response.message || 'Error al subir el archivo');
             $('#fileInput').val('');
             console.error('Error al subir archivo:', response.message);
+            if (response.debug) {
+                console.error('Información de depuración:', response.debug);
+            }
         }
     } catch (error) {
         console.error('Error AJAX al subir archivo:', error);
-        // Manejar errores de red o parseo de JSON
         alert('Error al subir el archivo. Por favor, intente de nuevo.');
         $('#fileInput').val('');
     }
@@ -317,16 +355,20 @@ async function deleteFile(fileId) {
                 opc: "file",
                 acc: "delete",
                 id: fileId
-            }
+            },
+            dataType: "json"
         });
 
-        if (response === "1") {
+        if (response.success) {
+            alert('Archivo eliminado correctamente');
             const searchQuery = $('#searchInput').val();
             if (searchQuery.length >= 4) {
                 searchFiles(searchQuery);
+            } else {
+                showAllFiles();
             }
         } else {
-            alert('Error al eliminar el archivo');
+            alert(response.message || 'Error al eliminar el archivo');
         }
     } catch (error) {
         console.error('Error:', error);
@@ -334,38 +376,105 @@ async function deleteFile(fileId) {
     }
 }
 
-async function downloadFile(fileId) {
-    try {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = BASE_URL + 'FileController.php';
-        form.target = '_blank';
+function downloadFile(id) {
+    $.ajax({
+        url: BASE_URL + "FileController.php",
+        type: 'POST',
+        data: {
+            opc: 'file',
+            acc: 'download',
+            id: id
+        },
+        xhrFields: {
+            responseType: 'blob'
+        },
+        success: function(response, status, xhr) {
+            const contentType = xhr.getResponseHeader('Content-Type');
+            
+            // Si la respuesta es JSON (error)
+            if (contentType && contentType.includes('application/json')) {
+                const reader = new FileReader();
+                reader.onload = function() {
+                    try {
+                        const error = JSON.parse(this.result);
+                        alert(error.message || 'Error al descargar el archivo');
+                    } catch (e) {
+                        console.error('Error al procesar la respuesta JSON:', e);
+                        alert('Error al procesar la respuesta del servidor');
+                    }
+                };
+                reader.readAsText(response);
+                return;
+            }
 
-        const opcInput = document.createElement('input');
-        opcInput.type = 'hidden';
-        opcInput.name = 'opc';
-        opcInput.value = 'file';
-
-        const accInput = document.createElement('input');
-        accInput.type = 'hidden';
-        accInput.name = 'acc';
-        accInput.value = 'download';
-
-        const idInput = document.createElement('input');
-        idInput.type = 'hidden';
-        idInput.name = 'id';
-        idInput.value = fileId;
-
-        form.appendChild(opcInput);
-        form.appendChild(accInput);
-        form.appendChild(idInput);
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
-    } catch (error) {
-        console.error('Error:', error);
-        alert('Error al descargar el archivo');
-    }
+            // Si es un archivo, crear el enlace de descarga
+            try {
+                const blob = new Blob([response], { type: contentType });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                
+                // Obtener el nombre del archivo del header Content-Disposition
+                const contentDisposition = xhr.getResponseHeader('Content-Disposition');
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                    if (filenameMatch && filenameMatch[1]) {
+                        a.download = filenameMatch[1];
+                    }
+                }
+                
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } catch (e) {
+                console.error('Error al procesar el archivo:', e);
+                alert('Error al procesar el archivo para descarga');
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Error en la descarga:', {xhr, status, error});
+            
+            // Si la respuesta es un blob, intentar leerlo como texto
+            if (xhr.responseType === 'blob') {
+                const reader = new FileReader();
+                reader.onload = function() {
+                    try {
+                        // Intentar parsear como JSON
+                        const error = JSON.parse(this.result);
+                        alert(error.message || 'Error al descargar el archivo');
+                    } catch (e) {
+                        // Si no es JSON, intentar descargar como archivo
+                        try {
+                            const blob = new Blob([xhr.response], { type: xhr.getResponseHeader('Content-Type') });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            
+                            const contentDisposition = xhr.getResponseHeader('Content-Disposition');
+                            if (contentDisposition) {
+                                const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                                if (filenameMatch && filenameMatch[1]) {
+                                    a.download = filenameMatch[1];
+                                }
+                            }
+                            
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            a.remove();
+                        } catch (downloadError) {
+                            console.error('Error al procesar la respuesta de error:', downloadError);
+                            alert('Error al descargar el archivo');
+                        }
+                    }
+                };
+                reader.readAsText(xhr.response);
+            } else {
+                alert('Error al descargar el archivo');
+            }
+        }
+    });
 }
 
 function updateUIForLoggedInUser(user) {
@@ -375,6 +484,13 @@ function updateUIForLoggedInUser(user) {
 }
 
 function displayResults(files) {
+    const debugInfo = {
+        action: 'displayResults',
+        filesCount: files.length,
+        files: files
+    };
+    console.log('Debug Info:', JSON.stringify(debugInfo, null, 2));
+
     const fileList = $('#fileList');
     fileList.empty();
 
@@ -391,7 +507,20 @@ function displayResults(files) {
     $('.results-count').text(`${files.length} resultado${files.length !== 1 ? 's' : ''} encontrado${files.length !== 1 ? 's' : ''}`);
 
     files.forEach(file => {
-        const li = $('<li>').addClass(`file-item ${getFileCategoryClass(file.tipo)} ${file.isOwner ? 'own-file' : ''}`);
+        const fileDebug = {
+            fileId: file.id,
+            fileName: file.nombre,
+            fileType: file.tipo,
+            fileCategory: file.categoria,
+            filePath: file.ruta,
+            isOwner: file.is_owner
+        };
+        console.log('Processing File:', JSON.stringify(fileDebug, null, 2));
+
+        const isOwner = file.is_owner === true || file.is_owner === 'true' || file.is_owner === 1;
+        const li = $('<li>').addClass(`file-item ${getFileCategoryClass(file.tipo)} ${isOwner ? 'own-file' : ''}`);
+        
+        const fileSize = parseInt(file.tamano) || 0;
         
         li.html(`
             <div class="file-info">
@@ -402,8 +531,9 @@ function displayResults(files) {
                     <div class="file-name">${file.nombre}</div>
                     <div class="file-meta">
                         <span class="file-type">📄 ${getFileTypeName(file.tipo)}</span>
-                        <span class="file-size">💾 ${formatFileSize(file.tamaño)}</span>
+                        <span class="file-size">💾 ${formatFileSize(fileSize)}</span>
                         <span class="file-owner">👤 Subido por: ${file.user_email}</span>
+                        ${isOwner ? '<span class="own-file-badge">Tu archivo</span>' : ''}
                     </div>
                 </div>
             </div>
@@ -411,7 +541,7 @@ function displayResults(files) {
                 <button class="btn btn-primary" onclick="downloadFile(${file.id})" title="Descargar archivo">
                     <i class="fas fa-download"></i>
                 </button>
-                ${file.isOwner ? `
+                ${isOwner ? `
                     <button class="btn btn-danger" onclick="deleteFile(${file.id})" title="Eliminar archivo">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -480,10 +610,17 @@ function getFileIcon(tipo) {
 }
 
 function formatFileSize(bytes) {
+    if (bytes === null || bytes === undefined || isNaN(bytes)) {
+        return '0 Bytes';
+    }
+    
+    bytes = parseInt(bytes);
     if (bytes === 0) return '0 Bytes';
+    
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
@@ -626,26 +763,35 @@ function updateProfile(event) {
 
 async function showAllFiles() {
     try {
+        const debugInfo = {
+            action: 'getAll',
+            category: currentCategory
+        };
+        console.log('Debug Info:', JSON.stringify(debugInfo, null, 2));
+
         const response = await $.ajax({
             type: "POST",
             url: BASE_URL + "FileController.php",
             data: {
                 opc: "file",
-                acc: "getAll"
+                acc: "getAll",
+                category: currentCategory
             },
             dataType: "json"
         });
         
-        if (response.files) {
+        console.log('Server Response:', JSON.stringify(response, null, 2));
+        if (response.success) {
             displayResults(response.files);
+            if (!currentCategory) {
             $('#searchInput').val('');
-            $('.category-btn').removeClass('active');
-            currentCategory = null;
+            }
         } else {
-            alert('Error al obtener los archivos');
+            console.error('GetAll Error:', JSON.stringify(response, null, 2));
+            displayResults([]);
         }
     } catch (error) {
-        console.error('Error:', error);
-        alert('Error al obtener los archivos');
+        console.error('Error:', JSON.stringify(error, null, 2));
+        displayResults([]);
     }
 } 
